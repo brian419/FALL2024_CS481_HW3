@@ -1,172 +1,127 @@
+/*
+    Name: Jeongbin Son
+    Email: json10@crimson.ua.edu
+    Course Section: CS 481
+    Homework #: 3
+    To Compile outside cluster: clang++ -Xpreprocessor -fopenmp -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -lomp -std=c++11 -o gameoflifetest gameoflifetest.cpp
+    To Run: ./gameoflifetest <board size> <max generations> <num threads> <output directory>
+    ex: ./gameoflifetest 100 100 2 /Users/brianson/Desktop/cs481/hw3/output
+    ex: ./gameoflife 5000 5000 1 /scratch/ualclsd0197/output_dir
+*/
+
 #include <iostream>
 #include <vector>
 #include <chrono>
 #include <fstream>
-#include <sys/stat.h> // For checking/creating directories
-#include <sys/types.h> // For permissions
-#include <omp.h>  // Include OpenMP
-//clang++ -Xpreprocessor -fopenmp -I/usr/local/opt/libomp/include -L/usr/local/opt/libomp/lib -lomp -std=c++11 -o gameoflifetest gameoflifetest.cpp
+#include <sys/stat.h> 
+#include <sys/types.h> 
+#include <omp.h> 
 
 using namespace std;
 using namespace std::chrono;
 
-// Function to create the output directory if it doesn't exist
-void createOutputDirectory(const string &outputDir)
-{
-    struct stat info;
+// this function will create an output directory
+void creatingoutputDirectory(const string &outputDirectory) {
+    struct stat directoryInfo;
 
-    // Check if the directory exists
-    if (stat(outputDir.c_str(), &info) != 0)
-    {
-        // Directory doesn't exist, so create it
-        cout << "Creating directory: " << outputDir << endl;
-        if (mkdir(outputDir.c_str(), 0777) == -1)
-        {
-            cerr << "Error creating directory " << outputDir << endl;
+    // if the directory doesn't exist, create it
+    if (stat(outputDirectory.c_str(), &directoryInfo) != 0) {
+        cout << "Creating directory: " << outputDirectory << endl;
+        if (mkdir(outputDirectory.c_str(), 0777) == -1) {
+            cerr << "There was an error creating the directory " << outputDirectory << endl; // debug error message
             exit(1);
         }
     }
-    else if (!(info.st_mode & S_IFDIR))
-    {
-        cerr << outputDir << " exists but is not a directory!" << endl;
-        exit(1);
-    }
 }
 
-// Function to count the number of alive neighbors around a given cell
-int countAliveNeighbors(const vector<vector<int>> &board, int x, int y)
-{
-    int aliveCount = 0;
-    for (int i = -1; i <= 1; ++i)
-    {
-        for (int j = -1; j <= 1; ++j)
-        {
-            if (i == 0 && j == 0) continue; // Skip the cell itself
-            aliveCount += board[x + i][y + j];
-        }
-    }
-    return aliveCount;
-}
+// this function will count the number of alive neighbors around a given cell
+inline int countAliveNeighbors(const int *board, int index, int boardSize) {
+    int aliveNeighborsCount = 0;
+    int row = index / boardSize;
+    int col = index % boardSize;
 
-void nextGeneration(vector<vector<int>> &currentGeneration, vector<vector<int>> &nextGeneration)
-{
-    int rows = currentGeneration.size();
-    int cols = currentGeneration[0].size();
-
-    // Parallelize the update of the grid with OpenMP
-    #pragma omp parallel for collapse(2)
-    for (int i = 1; i < rows - 1; ++i)
-    {
-        for (int j = 1; j < cols - 1; ++j)
-        {
-            int aliveNeighbors = countAliveNeighbors(currentGeneration, i, j);
-            if (currentGeneration[i][j] == 1)
-            {
-                if (aliveNeighbors < 2 || aliveNeighbors > 3)
-                    nextGeneration[i][j] = 0; // Cell dies
-                else
-                    nextGeneration[i][j] = 1; // Cell survives
-            }
-            else
-            {
-                if (aliveNeighbors == 3)
-                    nextGeneration[i][j] = 1; // Cell becomes alive
-                else
-                    nextGeneration[i][j] = 0; // Cell remains dead
+    for (int i = -1; i <= 1; ++i) {
+        for (int j = -1; j <= 1; ++j) {
+            if (i == 0 && j == 0) continue; 
+            int newRow = row + i;
+            int newCol = col + j;
+            if (newRow >= 0 && newRow < boardSize && newCol >= 0 && newCol < boardSize) {
+                aliveNeighborsCount += board[newRow * boardSize + newCol];
             }
         }
     }
+    return aliveNeighborsCount;
 }
 
-bool isSameBoard(const vector<vector<int>> &board1, const vector<vector<int>> &board2)
-{
-    bool isSame = true;
-
+// this function will compute the next generation of the board
+void nextGeneration(int *current, int *next, int boardSize) {
     #pragma omp parallel for
-    for (size_t i = 1; i < board1.size() - 1; ++i)
-    {
-        bool localIsSame = true;  // Local variable for this thread
-
-        for (size_t j = 1; j < board1[i].size() - 1; ++j)
-        {
-            if (board1[i][j] != board2[i][j])
-            {
-                localIsSame = false;  // Mark local flag if boards differ
-            }
-        }
-
-        // Only one thread can modify `isSame` at a time
-        #pragma omp critical
-        {
-            if (!localIsSame)
-            {
-                isSame = false;
-            }
-        }
+    for (int i = 0; i < boardSize * boardSize; ++i) {
+        int aliveNeighbors = countAliveNeighbors(current, i, boardSize);
+        next[i] = (current[i] == 1) ? (aliveNeighbors < 2 || aliveNeighbors > 3 ? 0 : 1) : (aliveNeighbors == 3 ? 1 : 0);
     }
-
-    return isSame;
 }
 
-// Function to write the final board to a file in the output directory
-void writeBoardToFile(const vector<vector<int>> &board, const string &outputDir, int generation)
-{
-    createOutputDirectory(outputDir);  // Ensure the output directory exists
-    ofstream outFile(outputDir + "/final_board_gen_" + to_string(generation) + ".txt");
-    for (size_t i = 1; i < board.size() - 1; ++i)
-    {
-        for (size_t j = 1; j < board[i].size() - 1; ++j)
-        {
-            outFile << (board[i][j] ? '*' : '.') << " ";
+// this function will check if the two boards are the same
+bool isBoardSame(const int *board1, const int *board2, int size) {
+    for (int i = 0; i < size * size; ++i) {
+        if (board1[i] != board2[i]) {
+            return false; 
+        }
+    }
+    return true; 
+}
+
+// this function will write the final board to a file
+void writingFinalBoardToFile(const int *board, const string &outputDirectory, int generation, int boardSize) {
+    creatingoutputDirectory(outputDirectory);  
+    ofstream outFile(outputDirectory + "/final_board_gen_" + to_string(generation) + ".txt");
+    for (int i = 0; i < boardSize; ++i) {
+        for (int j = 0; j < boardSize; ++j) {
+            outFile << (board[i * boardSize + j] ? '*' : '.') << " ";
         }
         outFile << endl;
     }
     outFile.close();
 }
 
-int main(int argc, char *argv[])
-{
-    if (argc != 5)
-    {
-        cout << "Incorrect usage. Please type '" << argv[0] << " <board size> <max generations> <num threads> <output directory>'" << endl;
+int main(int argc, char *argv[]) {
+    if (argc != 5) {
+        cout << "Incorrect usage. Please type '" << argv[0] << " <board size> <max generations> <num threads> <output directory> \nex: ./gameoflifetest 100 100 2 /Users/brianson/Desktop/cs481/hw3/output'" << endl;
         return 1;
     }
 
-    string outputDir = argv[4];
-    int boardSize = stoi(argv[1]);         // Board size from command line
-    int maxGenerations = stoi(argv[2]);    // Max generations from command line
-    int numThreads = stoi(argv[3]);        // Number of threads from command line
+    // command line arguments
+    string outputDirectory = argv[4];
+    int boardSize = stoi(argv[1]);         
+    int maxAmountGenerations = stoi(argv[2]);    
+    int numThreads = stoi(argv[3]);        
 
-    omp_set_num_threads(numThreads);       // Set the number of threads
+    omp_set_num_threads(numThreads);       
 
-    vector<vector<int>> board(boardSize + 2, vector<int>(boardSize + 2, 0)); // Board with ghost cells
-    vector<vector<int>> nextGenerationBoard(boardSize + 2, vector<int>(boardSize + 2, 0));
+    int *board = new int[boardSize * boardSize](); 
+    int *nextGenerationBoard = new int[boardSize * boardSize]();
 
-    // Initialize the board with a random state
-    srand(time(nullptr));
-    for (int i = 1; i <= boardSize; ++i)
-    {
-        for (int j = 1; j <= boardSize; ++j)
-        {
-            board[i][j] = rand() % 2;
-        }
+    srand(12345); // fixed seed
+
+    #pragma omp parallel for
+    for (int i = 0; i < boardSize * boardSize; ++i) {
+        board[i] = rand() % 2; 
     }
 
-    auto start = high_resolution_clock::now(); // Start timer
+    auto start = high_resolution_clock::now(); 
 
-    int generation = 0;    // Track current generation
-    bool noChange = false; // Track if the board has changed
+    int generation = 0;   
+    bool noChange = false; 
 
-    while (generation < maxGenerations && !noChange)
-    {
-        nextGeneration(board, nextGenerationBoard); // Compute the next generation
+    while (generation < maxAmountGenerations && !noChange) {
+        nextGeneration(board, nextGenerationBoard, boardSize); 
 
-        if (isSameBoard(board, nextGenerationBoard))
-        {
-            noChange = true;  // Stop if no change
+        if (isBoardSame(board, nextGenerationBoard, boardSize)) {
+            noChange = true;  
         }
 
-        board.swap(nextGenerationBoard); // Move to next generation
+        swap(board, nextGenerationBoard); 
         generation++;
     }
 
@@ -175,8 +130,10 @@ int main(int argc, char *argv[])
 
     cout << "Simulation completed in " << generation << " generations and took " << duration.count() << " ms." << endl;
 
-    // Write the final board state to a file in the output directory
-    writeBoardToFile(board, outputDir, generation);
+    writingFinalBoardToFile(board, outputDirectory, generation, boardSize);
+
+    delete[] board; 
+    delete[] nextGenerationBoard;
 
     return 0;
 }
