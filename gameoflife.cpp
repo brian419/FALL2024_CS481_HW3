@@ -73,9 +73,9 @@ bool isBoardSame(const int *board1, const int *board2, int size) {
 }
 
 // this function will write the final board to a file
-void writingFinalBoardToFile(const int *board, const string &outputDirectory, int generation, int boardSize) {
+void writingFinalBoardToFile(const int *board, const string &outputDirectory, int generation, int boardSize, int numThreads) {
     creatingoutputDirectory(outputDirectory);  
-    ofstream outFile(outputDirectory + "/final_board_gen_" + to_string(generation) + ".txt");
+    ofstream outFile(outputDirectory + "/final_board_gen_" + to_string(boardSize) + "_gen_" + to_string(generation) + "_threads_" + to_string(numThreads) + ".txt");
     for (int i = 0; i < boardSize; ++i) {
         for (int j = 0; j < boardSize; ++j) {
             outFile << (board[i * boardSize + j] ? '*' : '.') << " ";
@@ -87,7 +87,7 @@ void writingFinalBoardToFile(const int *board, const string &outputDirectory, in
 
 int main(int argc, char *argv[]) {
     if (argc != 5) {
-        cout << "Incorrect usage. Please type '" << argv[0] << " <board size> <max generations> <num threads> <output directory> \nex: ./gameoflifetest 100 100 2 /Users/brianson/Desktop/cs481/hw3/output'" << endl;
+        cout << "Incorrect usage. Please type '" << argv[0] << " <board size> <max generations> <num threads> <output directory> \nex: ./gameoflife 100 100 2 /Users/brianson/Desktop/cs481/hw3/output'" << endl;
         return 1;
     }
 
@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
 
     cout << "Simulation completed in " << generation << " generations and took " << duration.count() << " ms." << endl;
 
-    writingFinalBoardToFile(board, outputDirectory, generation, boardSize);
+    writingFinalBoardToFile(board, outputDirectory, generation, boardSize, numThreads);
 
     delete[] board; 
     delete[] nextGenerationBoard;
